@@ -16,7 +16,7 @@
 - Follow dan unfollow user
 - Lihat profil user & status follow
 - Hitung jumlah follower dan following
-- Dokumentasi API tersedia di [`docs/api.md`](./docs/api.md)
+- Dokumentasi API tersedia di [`doc/api.md`](./doc/api.md)
 
 ## 🛠️ Instalasi
 
