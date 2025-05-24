@@ -1,151 +1,133 @@
-import { Context } from 'hono'
-import { PrismaClient } from '@prisma/client'
-import { verify } from 'jsonwebtoken'
+import { Context } from 'hono';
+import { verify } from 'jsonwebtoken';
+import { query } from '../lib/db';
 
-const prisma = new PrismaClient()
-const JWT_SECRET = process.env.JWT_SECRET!
+const JWT_SECRET = process.env.JWT_SECRET!;
 
 function getUserIdFromToken(c: Context): number | null {
-  const authHeader = c.req.header('Authorization')
-  if (!authHeader) return null
-  const token = authHeader.split(' ')[1]
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader) return null;
+  const token = authHeader.split(' ')[1];
   try {
-    const payload = verify(token, JWT_SECRET) as { id: number }
-    return payload.id
+    const payload = verify(token, JWT_SECRET) as { id: number };
+    return payload.id;
   } catch {
-    return null
+    return null;
   }
 }
 
 export const getUserProfile = async (c: Context) => {
-  const userId = getUserIdFromToken(c)
-  const requestedUserId = Number(c.req.param('id'))
+  const userId = getUserIdFromToken(c);
+  const requestedUserId = Number(c.req.param('id'));
 
-  if (!userId) return c.json({ error: 'Unauthorized' }, 401)
+  if (!userId) return c.json({ error: 'Unauthorized' }, 401);
 
-  const user = await prisma.user.findUnique({
-    where: { id: requestedUserId },
-    select: {
-      id: true,
-      username: true,
-      email: true,
-      bio: true,
-      image: true,
-      createdAt: true,
-      updatedAt: true,
-    },
-  })
+  const user = await query(
+    'SELECT id, username, email, bio, image, "createdAt", "updatedAt" FROM "User" WHERE id = $1',
+    [requestedUserId]
+  );
 
-  if (!user) {
-    return c.json({ error: 'User not found' }, 404)
+  if (user.length === 0) {
+    return c.json({ error: 'User not found' }, 404);
   }
 
-  // Cek apakah user yang sedang login sudah mengikuti user yang diminta
-  const isFollowing = await prisma.follow.findUnique({
-    where: {
-      followerId_followingId: {
-        followerId: userId,
-        followingId: requestedUserId,
-      },
-    },
-  })
+  const followerCount = (await query(
+    'SELECT COUNT(*) FROM "Follow" WHERE "followingId" = $1',
+    [requestedUserId]
+  ))[0].count;
 
-  // Mengambil jumlah follower
-  const followerCount = await prisma.follow.count({
-    where: { followingId: requestedUserId },
-  })
+  const followingCount = (await query(
+    'SELECT COUNT(*) FROM "Follow" WHERE "followerId" = $1',
+    [requestedUserId]
+  ))[0].count;
 
-  // Mengambil jumlah following
-  const followingCount = await prisma.follow.count({
-    where: { followerId: requestedUserId },
-  })
+  const isFollowing = (await query(
+    'SELECT 1 FROM "Follow" WHERE "followerId" = $1 AND "followingId" = $2',
+    [userId, requestedUserId]
+  )).length > 0;
 
   return c.json({
-    user,
+    user: user[0],
     followerCount,
     followingCount,
-    isFollowing: isFollowing ? true : false,
-  })
-}
-
-
+    isFollowing,
+  });
+};
 
 export const updateUserProfile = async (c: Context) => {
-  const userId = getUserIdFromToken(c)
-  if (!userId) return c.json({ error: 'Unauthorized' }, 401)
+  const userId = getUserIdFromToken(c);
+  if (!userId) return c.json({ error: 'Unauthorized' }, 401);
 
-  const { bio, image } = await c.req.json()
+  const { bio, image } = await c.req.json();
 
-  const user = await prisma.user.update({
-    where: { id: userId },
-    data: {
-      bio: bio ?? undefined,
-      image: image ?? undefined,
-    },
-  })
+  const user = await query(
+    'UPDATE "User" SET bio = $1, image = $2, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *',
+    [bio || null, image || null, userId]
+  );
 
-  return c.json(user)
-}
+  return c.json(user[0]);
+};
+
 export const followUser = async (c: Context) => {
-  const followerId = getUserIdFromToken(c)
-  const followingId = Number(c.req.param('id'))
+  const followerId = getUserIdFromToken(c);
+  const followingId = Number(c.req.param('id'));
 
-  if (!followerId) return c.json({ error: 'Unauthorized' }, 401)
-  if (followerId === followingId) return c.json({ error: 'You cannot follow yourself' }, 400)
+  if (!followerId) return c.json({ error: 'Unauthorized' }, 401);
+  if (followerId === followingId) return c.json({ error: 'You cannot follow yourself' }, 400);
 
-  try {
-    await prisma.follow.create({
-      data: {
-        followerId,
-        followingId,
-      },
-    })
-    return c.json({ message: 'Followed successfully' })
-  } catch (err) {
-    return c.json({ error: 'Already following or error occurred' }, 400)
+  const existing = await query(
+    'SELECT 1 FROM "Follow" WHERE "followerId" = $1 AND "followingId" = $2',
+    [followerId, followingId]
+  );
+
+  if (existing.length > 0) {
+    return c.json({ error: 'Already following or error occurred' }, 400);
   }
-}
+
+  await query(
+    'INSERT INTO "Follow" ("followerId", "followingId") VALUES ($1, $2)',
+    [followerId, followingId]
+  );
+
+  return c.json({ message: 'Followed successfully' });
+};
 
 export const unfollowUser = async (c: Context) => {
-  const followerId = getUserIdFromToken(c)
-  const followingId = Number(c.req.param('id'))
+  const followerId = getUserIdFromToken(c);
+  const followingId = Number(c.req.param('id'));
 
-  if (!followerId) return c.json({ error: 'Unauthorized' }, 401)
+  if (!followerId) return c.json({ error: 'Unauthorized' }, 401);
 
-  await prisma.follow.deleteMany({
-    where: {
-      followerId,
-      followingId,
-    },
-  })
+  await query(
+    'DELETE FROM "Follow" WHERE "followerId" = $1 AND "followingId" = $2',
+    [followerId, followingId]
+  );
 
-  return c.json({ message: 'Unfollowed successfully' })
-}
+  return c.json({ message: 'Unfollowed successfully' });
+};
+
 export const getUserPosts = async (c: Context) => {
-  const userId = Number(c.req.param('id'))
+  const userId = Number(c.req.param('id'));
 
   if (isNaN(userId)) {
-    return c.json({ error: 'Invalid user ID' }, 400)
+    return c.json({ error: 'Invalid user ID' }, 400);
   }
 
-  const posts = await prisma.post.findMany({
-    where: { authorId: userId },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      id: true,
-      content: true,
-      image: true,
-      createdAt: true,
-      updatedAt: true,
-      author: {
-        select: {
-          id: true,
-          username: true,
-          image: true,
-        },
-      },
-    },
-  })
+  const posts = await query(`
+    SELECT 
+        p.id,
+        p.content,
+        p.image,
+        p."createdAt",
+        p."updatedAt",
+        u.id AS author_id,
+        u.username AS author_username,
+        u.image AS author_image
+    FROM "Post" p
+    LEFT JOIN "User" u ON p."authorId" = u.id
+    WHERE p."authorId" = $1
+    ORDER BY p."createdAt" DESC
+  `, [userId]);
 
-  return c.json(posts)
-}
+  return c.json(posts);
+};
