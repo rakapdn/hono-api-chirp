@@ -1,18 +1,19 @@
 import { Hono, Context } from 'hono'
-import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
+import { query } from '../lib/db'
 
-const prisma = new PrismaClient()
 const JWT_SECRET = process.env.JWT_SECRET!
 
 // Register Handler
   export const register = async (c: Context) => {
   const { email, username, password } = await c.req.json()
 
-  const existingUser = await prisma.user.findUnique({
-    where: { email },
-  })
+  // Periksa apakah email sudah ada
+  const existingUser = await query(
+    'SELECT * FROM users WHERE email = $1',
+    [email]
+  )
 
   if (existingUser) {
     return c.json({ error: 'User with this email already exists' }, 400)
@@ -20,13 +21,11 @@ const JWT_SECRET = process.env.JWT_SECRET!
 
   const hashedPassword = await bcrypt.hash(password, 10)
 
-  const newUser = await prisma.user.create({
-    data: {
-      email,
-      username,
-      password: hashedPassword,
-    },
-  })
+  // Nambah Pengguna Baru
+  const newUser = await query(
+    'INSERT INTO users (email, username, password) VALUES ($1, $2, $3) RETURNING id, email, username',
+    [email, username, hashedPassword]
+  )
 
   return c.json({ message: 'User registered successfully', user: newUser })
 }
@@ -35,23 +34,22 @@ const JWT_SECRET = process.env.JWT_SECRET!
 export const login = async (c: Context) => {
   const { email, password } = await c.req.json()
 
-  const user = await prisma.user.findUnique({
-    where: { email },
-  })
+  const user = await query(
+    'SELECT * FROM users WHERE email = $1',
+    [email]
+  )
 
   if (!user) {
     return c.json({ error: 'User not found' }, 404)
   }
 
-  const validPassword = await bcrypt.compare(password, user.password)
-  if (!validPassword) {
-    return c.json({ error: 'Invalid password' }, 400)
-  }
-
-  const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '1h' })
+  const token = jwt.sign({ id: user[0].id }, JWT_SECRET, { expiresIn: '1h' })
 
   return c.json({ message: 'Login successful', token })
+  
 }
+
+  
 
 // Get Me Handler
 export const getMe = async (c: Context) => {
@@ -60,11 +58,13 @@ export const getMe = async (c: Context) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as { id: number }
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-    })
+    const user = await query(
+      'SELECT id, email, username FROM users WHERE id = $1',
+      [decoded.id]
+    )
 
-    if (!user) return c.json({ error: 'User not found' }, 404)
+    // if (!user) return c.json({ error: 'User not found' }, 404)
+    if (user.length === 0) return c.json({ error: 'User not found' }, 404)
 
     return c.json({ user })
   } catch (error) {
