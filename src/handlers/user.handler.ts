@@ -23,7 +23,7 @@ export const getUserProfile = async (c: Context) => {
   if (!userId) return c.json({ error: 'Unauthorized' }, 401);
 
   const user = await query(
-    'SELECT id, username, email, bio, image, "createdAt", "updatedAt" FROM "User" WHERE id = $1',
+    'SELECT id, username, email, bio, image, "createdAt", "updatedAt" FROM "users" WHERE id = $1',
     [requestedUserId]
   );
 
@@ -32,17 +32,17 @@ export const getUserProfile = async (c: Context) => {
   }
 
   const followerCount = (await query(
-    'SELECT COUNT(*) FROM "Follow" WHERE "followingId" = $1',
+    'SELECT COUNT(*) FROM "follow" WHERE "followingId" = $1',
     [requestedUserId]
   ))[0].count;
 
   const followingCount = (await query(
-    'SELECT COUNT(*) FROM "Follow" WHERE "followerId" = $1',
+    'SELECT COUNT(*) FROM "follow" WHERE "followerId" = $1',
     [requestedUserId]
   ))[0].count;
 
   const isFollowing = (await query(
-    'SELECT 1 FROM "Follow" WHERE "followerId" = $1 AND "followingId" = $2',
+    'SELECT 1 FROM "follow" WHERE "followerId" = $1 AND "followingId" = $2',
     [userId, requestedUserId]
   )).length > 0;
 
@@ -61,7 +61,7 @@ export const updateUserProfile = async (c: Context) => {
   const { bio, image } = await c.req.json();
 
   const user = await query(
-    'UPDATE "User" SET bio = $1, image = $2, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *',
+    'UPDATE "users" SET bio = $1, image = $2, "updatedAt" = CURRENT_TIMESTAMP WHERE id = $3 RETURNING *',
     [bio || null, image || null, userId]
   );
 
@@ -76,7 +76,7 @@ export const followUser = async (c: Context) => {
   if (followerId === followingId) return c.json({ error: 'You cannot follow yourself' }, 400);
 
   const existing = await query(
-    'SELECT 1 FROM "Follow" WHERE "followerId" = $1 AND "followingId" = $2',
+    'SELECT 1 FROM "follow" WHERE "followerId" = $1 AND "followingId" = $2',
     [followerId, followingId]
   );
 
@@ -85,7 +85,7 @@ export const followUser = async (c: Context) => {
   }
 
   await query(
-    'INSERT INTO "Follow" ("followerId", "followingId") VALUES ($1, $2)',
+    'INSERT INTO "follow" ("followerId", "followingId") VALUES ($1, $2)',
     [followerId, followingId]
   );
 
@@ -99,7 +99,7 @@ export const unfollowUser = async (c: Context) => {
   if (!followerId) return c.json({ error: 'Unauthorized' }, 401);
 
   await query(
-    'DELETE FROM "Follow" WHERE "followerId" = $1 AND "followingId" = $2',
+    'DELETE FROM "follow" WHERE "followerId" = $1 AND "followingId" = $2',
     [followerId, followingId]
   );
 
@@ -123,8 +123,8 @@ export const getUserPosts = async (c: Context) => {
         u.id AS author_id,
         u.username AS author_username,
         u.image AS author_image
-    FROM "Post" p
-    LEFT JOIN "User" u ON p."authorId" = u.id
+    FROM "post" p
+    LEFT JOIN "users" u ON p."authorId" = u.id
     WHERE p."authorId" = $1
     ORDER BY p."createdAt" DESC
   `, [userId]);
