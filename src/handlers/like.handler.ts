@@ -1,56 +1,107 @@
 import { Context } from 'hono';
-import { verify } from 'jsonwebtoken';
-import { query } from '../lib/db';
+import { verify, JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken'; 
+import { query } from '../lib/db'; 
 
-const JWT_SECRET = process.env.JWT_SECRET!;
 
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error("FATAL ERROR: JWT_SECRET is not defined in environment variables.");
+}
+
+/**
+ * Fungsi helper untuk mendapatkan userId dari token JWT di header Authorization.
+ * @param c Konteks Hono
+ * @returns userId jika token valid, selain itu null.
+ */
 function getUserIdFromToken(c: Context): number | null {
   const authHeader = c.req.header('Authorization');
-  if (!authHeader) return null;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // console.warn('Authorization header missing or not Bearer'); // Aktifkan untuk debug jika perlu
+    return null;
+  }
   const token = authHeader.split(' ')[1];
+  if (!token) {
+    // console.warn('Token not found after Bearer'); // Aktifkan untuk debug jika perlu
+    return null;
+  }
+
   try {
-    const payload = verify(token, JWT_SECRET) as { id: number };
+    const payload = verify(token, JWT_SECRET!) as { id: number; };
+    if (typeof payload.id !== 'number') {
+        console.warn('Invalid payload structure: id is not a number or missing.');
+        return null;
+    }
     return payload.id;
-  } catch {
+  } catch (error) {
+    if (error instanceof JsonWebTokenError || error instanceof TokenExpiredError) {
+      // console.warn(`Token verification failed: ${error.message}`); // Aktifkan untuk debug jika perlu
+    } else {
+      console.error('Unexpected error during token verification:', error);
+    }
     return null;
   }
 }
 
 export const likePost = async (c: Context) => {
   const userId = getUserIdFromToken(c);
-  if (!userId) return c.json({ error: 'Unauthorized' }, 401);
-
-  const postId = Number(c.req.param('id'));
-  if (isNaN(postId)) return c.json({ error: 'Invalid post ID' }, 400);
-
-  const existing = await query(
-    'SELECT id FROM "Like" WHERE "userId" = $1 AND "postId" = $2',
-    [userId, postId]
-  );
-
-  if (existing.length > 0) {
-    return c.json({ liked: true });
+  if (!userId) {
+    return c.json({ error: 'Unauthorized. Invalid or missing token.' }, 401);
   }
 
-  await query(
-    'INSERT INTO "Like" ("userId", "postId") VALUES ($1, $2) ON CONFLICT ON CONSTRAINT unique_like DO NOTHING',
-    [userId, postId]
-  );
+  const postIdString = c.req.param('id');
+  const postId = Number(postIdString);
+  if (isNaN(postId) || postId <= 0) { 
+    return c.json({ error: 'Invalid post ID. Must be a positive number.' }, 400);
+  }
 
-  return c.json({ liked: true });
+  try {
+    // 1. Cek apakah like sudah ada
+    const existingLike = await query(
+      'SELECT "id" FROM likes WHERE "userId" = $1 AND "postId" = $2',
+      [userId, postId]
+    );
+
+    if (existingLike.length > 0) {
+      return c.json({ liked: true, message: 'Post was already liked.' }, 200); 
+    }
+
+    await query(
+      'INSERT INTO likes ("userId", "postId") VALUES ($1, $2) ON CONFLICT ON CONSTRAINT unique_like DO NOTHING',
+      [userId, postId]
+    );
+
+    return c.json({ liked: true, message: 'Post liked successfully.' }, 201); 
+  } catch (dbError: any) {
+    console.error(`Database error in likePost (userId: ${userId}, postId: ${postId}):`, dbError.message, dbError.stack);
+    return c.json({ error: 'Failed to process like request due to a server error.' }, 500);
+  }
 };
 
+/**
+ * Handler untuk batal menyukai (unlike) sebuah post.
+ * Memastikan operasi bersifat idempoten.
+ */
 export const unlikePost = async (c: Context) => {
   const userId = getUserIdFromToken(c);
-  if (!userId) return c.json({ error: 'Unauthorized' }, 401);
+  if (!userId) {
+    return c.json({ error: 'Unauthorized. Invalid or missing token.' }, 401);
+  }
 
-  const postId = Number(c.req.param('id'));
-  if (isNaN(postId)) return c.json({ error: 'Invalid post ID' }, 400);
+  const postIdString = c.req.param('id');
+  const postId = Number(postIdString);
+  if (isNaN(postId) || postId <= 0) { 
+    return c.json({ error: 'Invalid post ID. Must be a positive number.' }, 400);
+  }
 
-  await query(
-    'DELETE FROM "Like" WHERE "userId" = $1 AND "postId" = $2',
-    [userId, postId]
-  );
+  try {
+    const result = await query(
+      'DELETE FROM likes WHERE "userId" = $1 AND "postId" = $2',
+      [userId, postId]
+    );
 
-  return c.json({ liked: false });
+    return c.json({ liked: false, message: 'Post unliked successfully.' }, 200); // 200 OK
+  } catch (dbError: any) {
+    console.error(`Database error in unlikePost (userId: ${userId}, postId: ${postId}):`, dbError.message, dbError.stack);
+    return c.json({ error: 'Failed to process unlike request due to a server error.' }, 500);
+  }
 };
