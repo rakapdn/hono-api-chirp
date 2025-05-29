@@ -33,13 +33,13 @@ export const getAllPosts = async (c: Context) => {
         COUNT(r.id) AS reply_count,
         EXISTS (
             SELECT 1 
-            FROM "Like" l2 
+            FROM "like" l2 
             WHERE l2."postId" = p.id AND l2."userId" = $1
         ) AS liked_by_me
-    FROM "Post" p
-    LEFT JOIN "User" u ON p."authorId" = u.id
-    LEFT JOIN "Like" l ON p.id = l."postId"
-    LEFT JOIN "Reply" r ON p.id = r."postId"
+    FROM "post" p
+    LEFT JOIN "users" u ON p."authorId" = u.id
+    LEFT JOIN "like" l ON p.id = l."postId"
+    LEFT JOIN "reply" r ON p.id = r."postId"
     GROUP BY p.id, u.id
     ORDER BY p."createdAt" DESC
   `, [userId || 0]);
@@ -65,13 +65,13 @@ export const getPostById = async (c: Context) => {
         COUNT(r.id) AS reply_count,
         EXISTS (
             SELECT 1 
-            FROM "Like" l2 
+            FROM "like" l2 
             WHERE l2."postId" = p.id AND l2."userId" = $1
         ) AS liked_by_me
-    FROM "Post" p
-    LEFT JOIN "User" u ON p."authorId" = u.id
-    LEFT JOIN "Like" l ON p.id = l."postId"
-    LEFT JOIN "Reply" r ON p.id = r."postId"
+    FROM "post" p
+    LEFT JOIN "users" u ON p."authorId" = u.id
+    LEFT JOIN "like" l ON p.id = l."postId"
+    LEFT JOIN "reply" r ON p.id = r."postId"
     WHERE p.id = $2
     GROUP BY p.id, u.id
   `, [userId || 0, id]);
@@ -88,7 +88,7 @@ export const createPost = async (c: Context) => {
   const { content, image } = await c.req.json();
 
   const post = await query(
-    'INSERT INTO "Post" (content, image, "authorId") VALUES ($1, $2, $3) RETURNING *',
+    'INSERT INTO "post" (content, image, "authorId") VALUES ($1, $2, $3) RETURNING *',
     [content, image || null, userId]
   );
 
@@ -102,7 +102,7 @@ export const deletePost = async (c: Context) => {
   const id = Number(c.req.param('id'));
 
   const post = await query(
-    'SELECT "authorId" FROM "Post" WHERE id = $1',
+    'SELECT "authorId" FROM "post" WHERE id = $1',
     [id]
   );
 
@@ -111,7 +111,7 @@ export const deletePost = async (c: Context) => {
   }
 
   await query(
-    'DELETE FROM "Post" WHERE id = $1',
+    'DELETE FROM "post" WHERE id = $1',
     [id]
   );
 

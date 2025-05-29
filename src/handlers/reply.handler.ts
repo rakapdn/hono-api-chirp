@@ -31,7 +31,7 @@ export const createReply = async (c: Context) => {
   if (!result.success) return c.json({ error: result.error.format() }, 400);
 
   const reply = await query(
-    'INSERT INTO "Reply" (content, "postId", "authorId") VALUES ($1, $2, $3) RETURNING *',
+    'INSERT INTO "reply" (content, "postId", "authorId") VALUES ($1, $2, $3) RETURNING *',
     [result.data.content, result.data.postId, userId]
   );
 
@@ -51,8 +51,8 @@ export const getRepliesByPost = async (c: Context) => {
         r."createdAt",
         r."updatedAt",
         u.username AS author_username
-    FROM "Reply" r
-    LEFT JOIN "User" u ON r."authorId" = u.id
+    FROM "reply" r
+    LEFT JOIN "users" u ON r."authorId" = u.id
     WHERE r."postId" = $1
     ORDER BY r."createdAt" ASC
   `, [postId]);
