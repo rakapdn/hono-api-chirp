@@ -55,7 +55,16 @@ export const likePost = async (c: Context) => {
   }
 
   try {
-    // 1. Cek apakah like sudah ada
+    // 1. Cek apakah postingan ada
+    const postExists = await query(
+      'SELECT id FROM post WHERE id = $1',
+      [postId]
+    );
+    if (postExists.length === 0) {
+      return c.json({ error: 'Post not found.' }, 404);
+    }
+
+    // 2. Cek apakah like sudah ada
     const existingLike = await query(
       'SELECT "id" FROM likes WHERE "userId" = $1 AND "postId" = $2',
       [userId, postId]
@@ -65,6 +74,7 @@ export const likePost = async (c: Context) => {
       return c.json({ liked: true, message: 'Post was already liked.' }, 200); 
     }
 
+    // 3. Tambahkan like
     await query(
       'INSERT INTO likes ("userId", "postId") VALUES ($1, $2) ON CONFLICT ON CONSTRAINT unique_like DO NOTHING',
       [userId, postId]
