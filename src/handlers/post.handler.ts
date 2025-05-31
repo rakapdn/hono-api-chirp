@@ -13,12 +13,10 @@ if (!JWT_SECRET) {
 function getUserIdFromToken(c: Context): number | null {
   const authHeader = c.req.header('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    // console.warn('Authorization header missing or not Bearer');
     return null;
   }
   const token = authHeader.split(' ')[1];
   if (!token) {
-    // console.warn('Token not found after Bearer');
     return null;
   }
 
@@ -31,7 +29,7 @@ function getUserIdFromToken(c: Context): number | null {
     return payload.id;
   } catch (error) {
     if (error instanceof JsonWebTokenError || error instanceof TokenExpiredError) {
-      // console.warn(`Token verification failed: ${error.message}`);
+      return null;
     } else {
       console.error('Unexpected error during token verification:', error);
     }
@@ -43,9 +41,10 @@ function getUserIdFromToken(c: Context): number | null {
  * Handler untuk mendapatkan semua post.
  */
 export const getAllPosts = async (c: Context) => {
-  const userId = getUserIdFromToken(c); // Bisa null jika pengguna tidak login
+  const userId = getUserIdFromToken(c);
 
   try {
+    console.log('Mengambil postingan dengan userId:', userId);
     const posts = await query(`
       SELECT 
           p.id,
@@ -56,25 +55,31 @@ export const getAllPosts = async (c: Context) => {
           p."authorId", 
           u.username AS author_username,
           u.image AS author_image,
-          (SELECT COUNT(*) FROM likes l_count WHERE l_count."postId" = p.id) AS like_count,      -- Tabel: likes (tanpa kutip)
-          (SELECT COUNT(*) FROM reply r_count WHERE r_count."postId" = p.id) AS reply_count,    -- Tabel: reply (tanpa kutip)
+          (SELECT COUNT(*) FROM likes l_count WHERE l_count."postId" = p.id) AS like_count,
+          (SELECT COUNT(*) FROM reply r_count WHERE r_count."postId" = p.id) AS reply_count,
           CASE
-              WHEN $1 IS NOT NULL THEN EXISTS (
+              WHEN $1::INTEGER IS NOT NULL THEN EXISTS (
                   SELECT 1 
-                  FROM likes l_liked                                                              -- Tabel: likes (tanpa kutip)
-                  WHERE l_liked."postId" = p.id AND l_liked."userId" = $1
+                  FROM likes l_liked
+                  WHERE l_liked."postId" = p.id AND l_liked."userId" = $1::INTEGER
               )
               ELSE FALSE
           END AS liked_by_me
-      FROM post p                                                                                -- Tabel: post (tanpa kutip)
-      JOIN users u ON p."authorId" = u.id                                                        -- Tabel: users (tanpa kutip)
+      FROM post p
+      JOIN users u ON p."authorId" = u.id
       ORDER BY p."createdAt" DESC
-    `, [userId]); 
+    `, [userId || null]);
 
+    console.log('Hasil query:', posts);
     return c.json(posts);
   } catch (dbError: any) {
-    console.error('Database error in getAllPosts:', dbError.message, dbError.stack);
-    return c.json({ error: 'Failed to retrieve posts due to a server error.' }, 500);
+    console.error('Error database di getAllPosts:', {
+      message: dbError.message,
+      stack: dbError.stack,
+      query: 'SELECT ...', // Ganti dengan query di atas
+      params: [userId || null],
+    });
+    return c.json({ error: 'Gagal mengambil postingan karena error server.' }, 500);
   }
 };
 
@@ -82,47 +87,54 @@ export const getAllPosts = async (c: Context) => {
  * Handler untuk mendapatkan post berdasarkan ID.
  */
 export const getPostById = async (c: Context) => {
-  const userId = getUserIdFromToken(c); 
-  const postIdString = c.req.param('id');
-  const postId = Number(postIdString);
+  const userId = getUserIdFromToken(c); // Ambil userId dari token (bisa null)
+  const postId = parseInt(c.req.param('id')); // Ambil ID dari parameter URL
 
-  if (isNaN(postId) || postId <= 0) {
-    return c.json({ error: 'Invalid post ID. Must be a positive number.' }, 400);
+  if (isNaN(postId)) {
+    return c.json({ error: 'Invalid post ID' }, 400);
   }
 
   try {
-    const result = await query(`
+    console.log('Mengambil postingan dengan postId:', postId, 'userId:', userId);
+    const post = await query(`
       SELECT 
           p.id,
           p.content,
           p.image,
-          p."createdAt",
+          p."createdAt", 
           p."updatedAt",
-          p."authorId",
+          p."authorId", 
           u.username AS author_username,
           u.image AS author_image,
-          (SELECT COUNT(*) FROM likes l_count WHERE l_count."postId" = p.id) AS like_count,      -- Tabel: likes (tanpa kutip)
-          (SELECT COUNT(*) FROM reply r_count WHERE r_count."postId" = p.id) AS reply_count,    -- Tabel: reply (tanpa kutip)
+          (SELECT COUNT(*) FROM likes l_count WHERE l_count."postId" = p.id) AS like_count,
+          (SELECT COUNT(*) FROM reply r_count WHERE r_count."postId" = p.id) AS reply_count,
           CASE
-              WHEN $1 IS NOT NULL THEN EXISTS (
+              WHEN $1::INTEGER IS NOT NULL THEN EXISTS (
                   SELECT 1 
-                  FROM likes l_liked                                                              -- Tabel: likes (tanpa kutip)
-                  WHERE l_liked."postId" = p.id AND l_liked."userId" = $1
+                  FROM likes l_liked
+                  WHERE l_liked."postId" = p.id AND l_liked."userId" = $1::INTEGER
               )
               ELSE FALSE
           END AS liked_by_me
-      FROM post p                                                                                -- Tabel: post (tanpa kutip)
-      JOIN users u ON p."authorId" = u.id                                                        -- Tabel: users (tanpa kutip)
-      WHERE p.id = $2
-    `, [userId, postId]); 
+      FROM post p
+      JOIN users u ON p."authorId" = u.id
+      WHERE p.id = $2::INTEGER
+      LIMIT 1
+    `, [userId || null, postId]);
 
-    if (result.length === 0) {
-      return c.json({ error: 'Post not found.' }, 404);
+    if (post.length === 0) {
+      return c.json({ error: 'Post not found' }, 404);
     }
 
-    return c.json(result[0]);
+    console.log('Hasil query:', post);
+    return c.json(post[0]); // Kembalikan hanya satu postingan
   } catch (dbError: any) {
-    console.error(`Database error in getPostById (postId: ${postId}):`, dbError.message, dbError.stack);
+    console.error('Error database di getPostById:', {
+      message: dbError.message,
+      stack: dbError.stack,
+      query: 'SELECT ...', // Ganti dengan query di atas
+      params: [userId || null, postId],
+    });
     return c.json({ error: 'Failed to retrieve post due to a server error.' }, 500);
   }
 };
