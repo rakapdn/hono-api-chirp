@@ -153,49 +153,62 @@ export const updateUserProfile = async (c: Context) => {
  * Handler untuk follow seorang pengguna.
  */
 export const followUser = async (c: Context) => {
-    const followerId = getUserIdFromToken(c); 
+  const followerId = getUserIdFromToken(c); // Ambil ID pengguna yang login dari token
+  const followingId = parseInt(c.req.param('id')); // Ambil ID pengguna yang akan diikuti dari parameter URL
 
-    const pathValidationResult = idParamSchema.safeParse({ id: c.req.param('id') });
-    if (!pathValidationResult.success) {
-        return c.json({ error: pathValidationResult.error.format() }, 400);
+  // Validasi followerId (pengguna harus login)
+  if (!followerId) {
+    return c.json({ error: 'Unauthorized: You must be logged in to follow a user.' }, 401);
+  }
+
+  // Validasi followingId
+  if (isNaN(followingId)) {
+    return c.json({ error: 'Invalid user ID' }, 400);
+  }
+
+  // Cegah pengguna mengikuti diri sendiri
+  if (followerId === followingId) {
+    return c.json({ error: 'You cannot follow yourself.' }, 400);
+  }
+
+  try {
+    console.log('Mengikuti pengguna dengan followerId:', followerId, 'followingId:', followingId);
+
+    // Periksa apakah pengguna yang akan diikuti ada
+    const userExists = await query(
+      `SELECT 1 FROM users WHERE id = $1::INTEGER LIMIT 1`,
+      [followingId]
+    );
+    if (userExists.length === 0) {
+      return c.json({ error: 'User not found' }, 404);
     }
-    const followingId = pathValidationResult.data.id; 
 
-    if (!followerId) {
-        return c.json({ error: 'Unauthorized. User must be logged in to follow.' }, 401);
+    // Periksa apakah sudah mengikuti
+    const alreadyFollowing = await query(
+      `SELECT 1 FROM follow WHERE "followerId" = $1::INTEGER AND "followingId" = $2::INTEGER LIMIT 1`,
+      [followerId, followingId]
+    );
+
+    if (alreadyFollowing.length > 0) {
+      return c.json({ message: 'You are already following this user.' }, 200);
     }
-    if (followerId === followingId) {
-        return c.json({ error: 'You cannot follow yourself.' }, 400);
-    }
 
-    try {
-        const userToFollowExists = await query('SELECT id FROM users WHERE id = $1', [followingId]); 
-        if (userToFollowExists.length === 0) {
-            return c.json({ error: 'User to follow not found.' }, 404);
-        }
+    // Tambahkan relasi follow
+    await query(
+      `INSERT INTO follow ("followerId", "followingId") VALUES ($1::INTEGER, $2::INTEGER)`,
+      [followerId, followingId]
+    );
 
-        const result = await query(
-            'INSERT INTO follow ("followerId", "followingId") VALUES ($1, $2) ON CONFLICT ("followerId", "followingId") DO NOTHING RETURNING "id"',
-            [followerId, followingId]
-        );
-        
-        if (result.length > 0 && result[0].id) { 
-             return c.json({ message: 'Followed successfully.' }, 201); 
-        } else {
-            const alreadyFollowingCheck = await query(
-                'SELECT 1 FROM follow WHERE "followerId" = $1 AND "followingId" = $2',
-                [followerId, followingId]
-            );
-            if(alreadyFollowingCheck.length > 0) {
-                return c.json({ message: 'You are already following this user.' }, 200); 
-            }
-            return c.json({ error: 'Could not process follow request.' }, 500);
-        }
-
-    } catch (dbError: any) {
-        console.error(`Database error in followUser (followerId: ${followerId}, followingId: ${followingId}):`, dbError.message, dbError.stack);
-        return c.json({ error: 'Failed to follow user due to a server error.' }, 500);
-    }
+    return c.json({ message: 'Successfully followed the user.' }, 201);
+  } catch (dbError: any) {
+    console.error('Error database di followUser:', {
+      message: dbError.message,
+      stack: dbError.stack,
+      query: 'INSERT INTO follow ...',
+      params: [followerId, followingId],
+    });
+    return c.json({ error: 'Failed to follow user due to a server error.' }, 500);
+  }
 };
 
 /**
