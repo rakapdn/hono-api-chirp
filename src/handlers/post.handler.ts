@@ -42,15 +42,9 @@ function getUserIdFromToken(c: Context): number | null {
  * Handler untuk mendapatkan semua post.
  */
 export const getAllPosts = async (c: Context) => {
-  const userId = getUserIdFromToken(c);
-
-  // Validasi: Pastikan pengguna sudah login
-  if (!userId) {
-    return c.json({ error: 'Unauthorized: You must be logged in to view your posts.' }, 401);
-  }
+  const userId = getUserIdFromToken(c); // Optional: Untuk menentukan `liked_by_me`
 
   try {
-    console.log('Mengambil postingan dengan userId:', userId);
     const posts = await query(`
       SELECT 
           p.id,
@@ -73,11 +67,9 @@ export const getAllPosts = async (c: Context) => {
           END AS liked_by_me
       FROM post p
       JOIN users u ON p."authorId" = u.id
-      WHERE p."authorId" = $1::INTEGER
       ORDER BY p."createdAt" DESC
     `, [userId]);
 
-    console.log('Hasil query:', posts);
     return c.json(posts);
   } catch (dbError: any) {
     console.error('Error database di getAllPosts:', {
@@ -89,6 +81,7 @@ export const getAllPosts = async (c: Context) => {
     return c.json({ error: 'Gagal mengambil postingan karena error server.' }, 500);
   }
 };
+
 
 /**
  * Handler untuk mendapatkan post berdasarkan ID.
