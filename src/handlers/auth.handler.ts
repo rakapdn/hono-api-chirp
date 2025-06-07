@@ -11,11 +11,11 @@ if (!JWT_SECRET) {
 // Register Handler
 export const register = async (c: Context) => {
   try {
-    const { email, username, password } = await c.req.json();
+    const { email, username, fullName, password } = await c.req.json();
 
     // Validasi input dasar
-    if (!email || !username || !password) {
-      return c.json({ error: 'Email, username, and password are required' }, 400);
+    if (!email || !username || !fullName || !password) {
+      return c.json({ error: 'Email, username, fullName and password are required' }, 400);
     }
     if (password.length < 6) { // validasi panjang password
         return c.json({ error: 'Password must be at least 6 characters long' }, 400);
@@ -40,8 +40,8 @@ export const register = async (c: Context) => {
 
     // Tambah Pengguna Baru
     const newUserResult = await query(
-      'INSERT INTO users (email, username, password) VALUES ($1, $2, $3) RETURNING id, email, username', 
-      [email, username, hashedPassword]
+      'INSERT INTO users (email, username,"fullName", password) VALUES ($1, $2, $3, $4) RETURNING id, email, "fullName", username', 
+      [email, username,fullName, hashedPassword]
     );
 
     if (newUserResult.length === 0) {
@@ -66,7 +66,7 @@ export const login = async (c: Context) => {
 
     // Ambil user berdasarkan email
     const userResult = await query(
-      'SELECT id, email, username, password FROM users WHERE email = $1', 
+      'SELECT id, email, username, password, "fullName" FROM users WHERE email = $1',
       [email]
     );
 
@@ -92,7 +92,7 @@ export const login = async (c: Context) => {
     return c.json({
       message: 'Login successful',
       token,
-      user: { id: user.id, email: user.email, username: user.username } // Mengembalikan info user dasar
+      user: { id: user.id, email: user.email, username: user.username, fullName: user.fullName } // Mengembalikan info user dasar
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -114,7 +114,7 @@ export const getMe = async (c: Context) => {
     const decoded = jwt.verify(token, JWT_SECRET!) as { id: number; email: string; iat: number; exp: number }; 
     
     const userResult = await query(
-      'SELECT id, email, username FROM users WHERE id = $1', 
+      'SELECT id, email, "fullName", username FROM users WHERE id = $1', 
       [decoded.id]
     );
 

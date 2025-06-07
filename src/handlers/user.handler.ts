@@ -62,7 +62,7 @@ export const getUserProfile = async (c: Context) => {
 
     try {
         const userResult = await query(
-            'SELECT id, username, email, bio, image, "createdAt", "updatedAt" FROM users WHERE id = $1',
+            'SELECT id, username, "fullName", email, bio, image, "createdAt", "updatedAt" FROM users WHERE id = $1',
             [requestedUserId]
         );
 
@@ -269,13 +269,13 @@ export const getUserPosts = async (c: Context) => {
                 p.id,
                 p.content,
                 p.image,
-                p."createdAt",    -- Kolom "createdAt", "updatedAt", "authorId" tetap dikutip
+                p."createdAt",
                 p."updatedAt",
-                p."authorId", 
+                p."authorId",
                 u.username AS author_username,
                 u.image AS author_image
-            FROM post p          -- Perubahan: "post" menjadi post
-            JOIN users u ON p."authorId" = u.id -- Perubahan: "users" menjadi users
+            FROM post p 
+            JOIN users u ON p."authorId" = u.id 
             WHERE p."authorId" = $1
             ORDER BY p."createdAt" DESC
         `, [authorIdForPosts]);
