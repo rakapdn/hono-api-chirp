@@ -150,6 +150,77 @@ export const updateUserProfile = async (c: Context) => {
 };
 
 /**
+ * Handler untuk mencari user berdasarkan username
+ */
+export const searchUsersByUsername = async (c: Context) => {
+    let username = c.req.query('username');
+    console.log('Username awal dari query param:', JSON.stringify(username));
+
+    if (!username || typeof username !== 'string' || username.trim().length === 0) {
+        return c.json({ error: 'Query parameter "username" is required and cannot be empty.' }, 400);
+    }
+
+    username = username.trim();
+    console.log('Username setelah trim:', JSON.stringify(username));
+
+    try {
+        // Cari user berdasarkan username, ambil 1 user teratas yang matching
+        const userResult = await query(
+            `SELECT id, username, "fullName", email, bio, image, "createdAt", "updatedAt"
+             FROM users
+             WHERE LOWER(username) LIKE LOWER($1)
+             ORDER BY "createdAt" DESC
+             LIMIT 1`,
+            [`%${username}%`]
+        );
+
+        if (userResult.length === 0) {
+            return c.json({ error: 'User not found.' }, 404);
+        }
+        const user = userResult[0];
+
+        // Ambil userId dari token (bisa null jika tidak login)
+        const loggedInUserId = getUserIdFromToken(c);
+
+        // Hitung followerCount
+        const followerCountResult = await query(
+            'SELECT COUNT(*) AS count FROM follow WHERE "followingId" = $1',
+            [user.id]
+        );
+        const followerCount = Number(followerCountResult[0]?.count || 0);
+
+        // Hitung followingCount
+        const followingCountResult = await query(
+            'SELECT COUNT(*) AS count FROM follow WHERE "followerId" = $1',
+            [user.id]
+        );
+        const followingCount = Number(followingCountResult[0]?.count || 0);
+
+        // Cek apakah user login mengikuti user yang dicari
+        let isFollowing = false;
+        if (loggedInUserId && loggedInUserId !== user.id) {
+            const isFollowingResult = await query(
+                'SELECT 1 FROM follow WHERE "followerId" = $1 AND "followingId" = $2',
+                [loggedInUserId, user.id]
+            );
+            isFollowing = isFollowingResult.length > 0;
+        }
+
+        // Kembalikan response yang sama seperti getUserProfile
+        return c.json({
+            user,
+            followerCount,
+            followingCount,
+            isFollowing: loggedInUserId ? isFollowing : false,
+        });
+
+    } catch (error: any) {
+        console.error(`Database error in searchUserCompleteProfileByUsername (username: ${username}):`, error.message, error.stack);
+        return c.json({ error: 'Failed to search user due to a server error.' }, 500);
+    }
+};
+
+/**
  * Handler untuk follow seorang pengguna.
  */
 export const followUser = async (c: Context) => {

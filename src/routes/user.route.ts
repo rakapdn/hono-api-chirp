@@ -5,14 +5,17 @@ import {
   followUser,
   unfollowUser,
   getUserPosts,
+  searchUsersByUsername,
 } from '../handlers/user.handler'
 
 const userRoute = new Hono()
 
 // User profile endpoints
+userRoute.get('/search', searchUsersByUsername) // Pencarian user berdasarkan username
 userRoute.get('/:id', getUserProfile) // Mengambil profil user berdasarkan ID sesuai rencana
+userRoute.put('/:id/update', updateUserProfile) // Update profil user berdasarkan ID
 
-// Follow relationship endpoints - menggunakan singular sesuai rencana
+// Follow relationship endpoints
 userRoute.post('/:id/follow', followUser)
 userRoute.delete('/:id/unfollow', unfollowUser)
 
