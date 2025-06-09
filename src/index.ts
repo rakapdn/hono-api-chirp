@@ -7,8 +7,13 @@ import userRoutes from './routes/user.route'
 // import imageRoutes from './routes/image.route';
 import 'dotenv/config'
 
-
 const app = new Hono()
+
+app.use('*', cors({
+  origin: ['http://localhost:3001'], // Port FE
+  allowHeaders: ['Content-Type', 'Authorization'],
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+}))
 
 // 🛡️ Enable CORS globally
 // app.use('*', cors({
