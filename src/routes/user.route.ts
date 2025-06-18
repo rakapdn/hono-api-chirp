@@ -1,9 +1,9 @@
 import { Hono } from 'hono'
 import {
+  getAllUsers,
   getUserProfile,
   updateUserProfile,
-  followUser,
-  unfollowUser,
+  toggleFollow,
   getUserPosts,
   searchUsersByUsername,
 } from '../handlers/user.handler'
@@ -11,13 +11,14 @@ import {
 const userRoute = new Hono()
 
 // User profile endpoints
+userRoute.get('', getAllUsers) // Mengambil semua user
 userRoute.get('/search', searchUsersByUsername) // Pencarian user berdasarkan username
 userRoute.get('/:id', getUserProfile) // Mengambil profil user berdasarkan ID sesuai rencana
-userRoute.put('/:id/update', updateUserProfile) // Update profil user berdasarkan ID
+userRoute.patch('/:id/update', updateUserProfile) // Update profil user berdasarkan ID
 
 // Follow relationship endpoints
-userRoute.post('/:id/follow', followUser)
-userRoute.delete('/:id/unfollow', unfollowUser)
+userRoute.post('/:id/toggle-follow', toggleFollow)
+
 
 // User posts endpoint
 userRoute.get('/:id/posts', getUserPosts)
